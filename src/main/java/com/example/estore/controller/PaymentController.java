@@ -15,21 +15,30 @@ import com.razorpay.RazorpayClient;
 @RequestMapping("/api/payment")
 public class PaymentController {
 
-    private final RazorpayClient razorpayClient;
+    private RazorpayClient razorpayClient;
+    private boolean isConfigured = false;
 
     public PaymentController(
-            @Value("${razorpay.key_id}") String keyId,
-            @Value("${razorpay.key_secret}") String keySecret) throws Exception {
-
-        if (keyId == null || keySecret == null || keyId.isEmpty() || keySecret.isEmpty()) {
-            throw new IllegalStateException("Razorpay credentials are not set");
+            @Value("${razorpay.key_id:}") String keyId,
+            @Value("${razorpay.key_secret:}") String keySecret) {
+        try {
+            if (keyId != null && !keyId.isEmpty() && keySecret != null && !keySecret.isEmpty()) {
+                this.razorpayClient = new RazorpayClient(keyId, keySecret);
+                this.isConfigured = true;
+            } else {
+                this.isConfigured = false; // mark as not configured
+            }
+        } catch (Exception e) {
+            this.isConfigured = false; // Razorpay client initialization failed
         }
-
-        this.razorpayClient = new RazorpayClient(keyId, keySecret);
     }
 
     @PostMapping("/create-order")
     public ResponseEntity<?> createOrder(@RequestBody Map<String, Object> data) {
+        if (!isConfigured) {
+            return ResponseEntity.badRequest().body("Payment service is not configured properly!");
+        }
+
         try {
             if (!data.containsKey("amount")) {
                 return ResponseEntity.badRequest().body("Amount is required");

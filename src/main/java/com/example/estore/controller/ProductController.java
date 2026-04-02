@@ -2,13 +2,13 @@ package com.example.estore.controller;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
 import org.springframework.web.multipart.MultipartFile;
 
 import com.cloudinary.Cloudinary;
@@ -31,6 +31,11 @@ public class ProductController {
     @Autowired
     private Cloudinary cloudinary;
 
+    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
+            "image/png", "image/jpeg", "image/jpg", "image/gif");
+
+    private static final long MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
     @GetMapping
     public ResponseEntity<?> getAll() {
         return ResponseEntity.ok(productService.getAll());
@@ -41,31 +46,37 @@ public class ProductController {
         return ResponseEntity.ok(productService.getById(id));
     }
 
-
     @PostMapping
     public ResponseEntity<?> add(@Valid @RequestBody ProductRequest request) {
         return ResponseEntity.ok(productService.add(request));
     }
 
-   
     @PutMapping("/{id}")
     public ResponseEntity<?> update(@PathVariable Long id,
-                                    @Valid @RequestBody ProductRequest request) {
+            @Valid @RequestBody ProductRequest request) {
         return ResponseEntity.ok(productService.update(id, request));
     }
 
-    
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(@PathVariable Long id) {
         productService.delete(id);
         return ResponseEntity.ok("Product deleted successfully!");
     }
 
-
+    // ------------------- IMAGE UPLOAD -------------------
     @PostMapping("/upload")
     public ResponseEntity<?> uploadImage(@RequestParam("file") MultipartFile file) {
+
         if (file == null || file.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "File is empty"));
+        }
+
+        if (!ALLOWED_CONTENT_TYPES.contains(file.getContentType())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Only PNG, JPEG, JPG, GIF images are allowed"));
+        }
+
+        if (file.getSize() > MAX_FILE_SIZE) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Maximum allowed file size is 5MB"));
         }
 
         try {
@@ -80,20 +91,16 @@ public class ProductController {
         }
     }
 
-    
     @GetMapping("/category/{category}")
     public ResponseEntity<?> getProductsByCategory(@PathVariable String category) {
         return ResponseEntity.ok(productService.getByCategory(category));
     }
 
-   
     @GetMapping("/search")
     public ResponseEntity<?> searchProducts(@RequestParam String query) {
-
         if (query == null || query.trim().isEmpty()) {
             return ResponseEntity.badRequest().body("Search query cannot be empty");
         }
-
         return ResponseEntity.ok(productService.searchProducts(query));
     }
 }

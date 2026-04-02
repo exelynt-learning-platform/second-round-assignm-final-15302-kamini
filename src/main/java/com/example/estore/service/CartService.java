@@ -13,6 +13,8 @@ import com.example.estore.repository.CartRepository;
 import com.example.estore.repository.ProductRepository;
 import com.example.estore.repository.UserRepository;
 
+import jakarta.persistence.OptimisticLockException;
+
 @Service
 public class CartService {
 
@@ -31,6 +33,7 @@ public class CartService {
 
         User user = userRepository.findById(item.getUser().getId())
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
         Product product = productRepository.findById(item.getProduct().getId())
                 .orElseThrow(() -> new IllegalArgumentException("Product not found"));
 
@@ -40,14 +43,34 @@ public class CartService {
             return updateExistingItem(existingItemOpt.get(), item.getQuantity(), product);
         }
 
-        // New item
-        if (product.getStock() < item.getQuantity()) {
-            throw new IllegalArgumentException("Insufficient stock available");
-        }
+        // New item with optimistic stock check
+        return addNewCartItem(user, product, item.getQuantity());
+    }
 
-        item.setUser(user);
-        item.setProduct(product);
-        return cartRepository.save(item);
+    private CartItem addNewCartItem(User user, Product product, int quantity) {
+        try {
+            synchronized (product.getId().toString().intern()) {
+                product = productRepository.findById(product.getId())
+                        .orElseThrow(() -> new IllegalArgumentException("Product not found"));
+
+                if (product.getStock() < quantity) {
+                    throw new IllegalArgumentException("Insufficient stock available");
+                }
+
+                // Optionally reduce stock here if you want immediate lock
+                // product.setStock(product.getStock() - quantity);
+                // productRepository.save(product);
+
+                CartItem cartItem = new CartItem();
+                cartItem.setUser(user);
+                cartItem.setProduct(product);
+                cartItem.setQuantity(quantity);
+
+                return cartRepository.save(cartItem);
+            }
+        } catch (OptimisticLockException e) {
+            throw new IllegalArgumentException("Stock was updated by another transaction, try again!");
+        }
     }
 
     private void validateCartItemInput(CartItem item) {
@@ -63,11 +86,18 @@ public class CartService {
 
     private CartItem updateExistingItem(CartItem existingItem, int additionalQuantity, Product product) {
         int newQuantity = existingItem.getQuantity() + additionalQuantity;
-        if (product.getStock() < newQuantity) {
-            throw new IllegalArgumentException("Exceeds available stock");
+
+        synchronized (product.getId().toString().intern()) {
+            product = productRepository.findById(product.getId())
+                    .orElseThrow(() -> new IllegalArgumentException("Product not found"));
+
+            if (product.getStock() < newQuantity) {
+                throw new IllegalArgumentException("Exceeds available stock");
+            }
+
+            existingItem.setQuantity(newQuantity);
+            return cartRepository.save(existingItem);
         }
-        existingItem.setQuantity(newQuantity);
-        return cartRepository.save(existingItem);
     }
 
     // ---------------- Get Cart ----------------
@@ -90,12 +120,18 @@ public class CartService {
                 .orElseThrow(() -> new IllegalArgumentException("Item not found"));
 
         Product product = item.getProduct();
-        if (product.getStock() < quantity) {
-            throw new IllegalArgumentException("Insufficient stock available");
-        }
 
-        item.setQuantity(quantity);
-        return cartRepository.save(item);
+        synchronized (product.getId().toString().intern()) {
+            product = productRepository.findById(product.getId())
+                    .orElseThrow(() -> new IllegalArgumentException("Product not found"));
+
+            if (product.getStock() < quantity) {
+                throw new IllegalArgumentException("Insufficient stock available");
+            }
+
+            item.setQuantity(quantity);
+            return cartRepository.save(item);
+        }
     }
 
     // ---------------- Remove Item ----------------

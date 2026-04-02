@@ -8,11 +8,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.example.estore.model.Order;
 import com.example.estore.model.OrderItem;
-import com.example.estore.model.Product;
 import com.example.estore.model.User;
 import com.example.estore.repository.OrderItemRepository;
 import com.example.estore.repository.OrderRepository;
-import com.example.estore.repository.ProductRepository;
 import com.example.estore.repository.UserRepository;
 
 @Service
@@ -28,7 +26,7 @@ public class OrderService {
     private UserRepository userRepository;
 
     @Autowired
-    private ProductRepository productRepository;
+    private StockService stockService;
 
     // ---------------- Create Order ----------------
     @Transactional
@@ -43,18 +41,19 @@ public class OrderService {
         double total = 0;
 
         // Validate stock before creating order
-        validateStock(items);
+        stockService.validateStock(items);
 
-        // Reduce stock and link items to order
-        reduceStockAndLinkItems(order, items);
+        // Reduce stock and link items
+        stockService.reduceStockAndLinkItems(items);
 
-        // Calculate total price
+        // Link items to order and calculate total
         for (OrderItem item : items) {
             total += item.getPrice() * item.getQuantity();
+            item.setOrder(order);
         }
 
         order.setTotalPrice(total);
-        order = orderRepository.save(order); // Save order first
+        order = orderRepository.save(order);
 
         // Save items
         for (OrderItem item : items) {
@@ -62,31 +61,6 @@ public class OrderService {
         }
 
         return order;
-    }
-
-    private void validateStock(List<OrderItem> items) {
-        for (OrderItem item : items) {
-            Product product = productRepository.findById(item.getProduct().getId())
-                    .orElseThrow(() -> new IllegalArgumentException("Product not found: " + item.getProduct().getId()));
-
-            if (product.getStock() < item.getQuantity()) {
-                throw new IllegalArgumentException("Insufficient stock for product: " + product.getTitle());
-            }
-        }
-    }
-
-    private void reduceStockAndLinkItems(Order order, List<OrderItem> items) {
-        for (OrderItem item : items) {
-            Product product = productRepository.findById(item.getProduct().getId()).get();
-
-            // Reduce stock
-            product.setStock(product.getStock() - item.getQuantity());
-            productRepository.save(product);
-
-            // Link order and product
-            item.setOrder(order);
-            item.setProduct(product);
-        }
     }
 
     // ---------------- Get Orders ----------------
@@ -107,15 +81,8 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("Order not found"));
 
-        // Null-safe iteration
         if (order.getItems() != null) {
-            for (OrderItem item : order.getItems()) {
-                Product product = item.getProduct();
-                if (product != null) {
-                    product.setStock(product.getStock() + item.getQuantity());
-                    productRepository.save(product);
-                }
-            }
+            stockService.restoreStock(order.getItems());
         }
 
         orderRepository.delete(order);
