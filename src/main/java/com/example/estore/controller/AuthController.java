@@ -2,6 +2,7 @@ package com.example.estore.controller;
 
 import java.time.LocalDateTime;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
 
@@ -37,35 +38,27 @@ public class AuthController {
     @Autowired
     private JavaMailSender mailSender;
 
-    @Value("${app.admin.email}")
-    private String adminEmail;
+    @Value("${app.admin.emails:}") // comma-separated list
+    private String adminEmails;
 
-    // -------------------
-    // TOKEN GENERATION
-    // -------------------
+    // ------------------- TOKEN GENERATION -------------------
     private String generateToken(User user) {
         String role = (user.getRole() != null) ? user.getRole().name() : "USER";
         return jwtUtil.generateToken(user.getEmail(), user.getName(), role);
     }
 
-    // -------------------
-    // PASSWORD STRENGTH CHECK
-    // -------------------
+    // ------------------- PASSWORD STRENGTH CHECK -------------------
     private boolean isPasswordStrong(String password) {
-        // Must include letters, numbers, special chars, min length 8
         return password.matches("^(?=.*[0-9])(?=.*[a-zA-Z])(?=.*[@#$%^&+=!]).{8,}$");
     }
 
-    // -------------------
-    // SIGNUP
-    // -------------------
+    // ------------------- SIGNUP -------------------
     @PostMapping("/signup")
     public ResponseEntity<?> signup(@Valid @RequestBody SignupRequest request) {
 
         if (!isPasswordStrong(request.getPassword())) {
             return ResponseEntity.badRequest().body(
-                    "Password must be 8+ chars, include letters, numbers, special chars"
-            );
+                    "Password must be 8+ chars, include letters, numbers, special chars");
         }
 
         if (userRepo.findByEmail(request.getEmail()).isPresent()) {
@@ -77,20 +70,21 @@ public class AuthController {
         user.setName(request.getName());
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setRole(request.getEmail().equalsIgnoreCase(adminEmail) ? Role.ADMIN : Role.USER);
+
+        // Check admin emails
+        boolean isAdmin = Arrays.stream(adminEmails.split(","))
+                .anyMatch(a -> a.equalsIgnoreCase(request.getEmail()));
+        user.setRole(isAdmin ? Role.ADMIN : Role.USER);
 
         userRepo.save(user);
 
         String token = generateToken(user);
         return ResponseEntity.ok(
                 new AuthResponse("User registered successfully!", true, token,
-                        user.getRole().name(), user.getName(), user.getId())
-        );
+                        user.getRole().name(), user.getName(), user.getId()));
     }
 
-    // -------------------
-    // LOGIN
-    // -------------------
+    // ------------------- LOGIN -------------------
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
         Optional<User> userOpt = userRepo.findByEmail(request.getEmail());
@@ -108,13 +102,10 @@ public class AuthController {
         String token = generateToken(user);
         return ResponseEntity.ok(
                 new AuthResponse("Login successful!", true, token,
-                        user.getRole().name(), user.getName(), user.getId())
-        );
+                        user.getRole().name(), user.getName(), user.getId()));
     }
 
-    // -------------------
-    // FORGOT PASSWORD (OTP)
-    // -------------------
+    // ------------------- FORGOT PASSWORD (OTP) -------------------
     @PostMapping("/forgot-password")
     public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> request) {
         String email = request.get("email");
@@ -141,9 +132,7 @@ public class AuthController {
         return ResponseEntity.ok("OTP sent successfully!");
     }
 
-    // -------------------
-    // RESET PASSWORD
-    // -------------------
+    // ------------------- RESET PASSWORD -------------------
     @PostMapping("/reset-password")
     public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> request) {
         String email = request.get("email");
@@ -156,8 +145,7 @@ public class AuthController {
 
         if (!isPasswordStrong(newPassword)) {
             return ResponseEntity.badRequest().body(
-                    "Password must be 8+ chars, include letters, numbers, special chars"
-            );
+                    "Password must be 8+ chars, include letters, numbers, special chars");
         }
 
         User user = userRepo.findByEmail(email)

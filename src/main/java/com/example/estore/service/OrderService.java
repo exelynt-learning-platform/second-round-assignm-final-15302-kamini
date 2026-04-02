@@ -30,71 +30,92 @@ public class OrderService {
     @Autowired
     private ProductRepository productRepository;
 
-
+    // ---------------- Create Order ----------------
     @Transactional
     public Order createOrder(Long userId, List<OrderItem> items) {
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
-        double total = 0;
-
         Order order = new Order();
         order.setUser(user);
 
-        // Process items first
+        double total = 0;
+
+        // Validate stock before creating order
+        validateStock(items);
+
+        // Reduce stock and link items to order
+        reduceStockAndLinkItems(order, items);
+
+        // Calculate total price
         for (OrderItem item : items) {
-            Product product = productRepository.findById(item.getProduct().getId())
-                    .orElseThrow(() -> new IllegalArgumentException("Product not found: " + item.getProduct().getId()));
-
-            if (product.getStock() < item.getQuantity())
-                throw new IllegalArgumentException("Insufficient stock for product: " + product.getTitle());
-
-            // Reduce stock
-            product.setStock(product.getStock() - item.getQuantity());
-            productRepository.save(product);
-
-            // Link order
-            item.setOrder(order);
-            item.setProduct(product);
-
             total += item.getPrice() * item.getQuantity();
         }
 
         order.setTotalPrice(total);
-        order = orderRepository.save(order); // Save only once after total is calculated
+        order = orderRepository.save(order); // Save order first
 
-        // Save items after order is persisted
+        // Save items
         for (OrderItem item : items) {
             orderItemRepository.save(item);
         }
 
         return order;
     }
-   
+
+    private void validateStock(List<OrderItem> items) {
+        for (OrderItem item : items) {
+            Product product = productRepository.findById(item.getProduct().getId())
+                    .orElseThrow(() -> new IllegalArgumentException("Product not found: " + item.getProduct().getId()));
+
+            if (product.getStock() < item.getQuantity()) {
+                throw new IllegalArgumentException("Insufficient stock for product: " + product.getTitle());
+            }
+        }
+    }
+
+    private void reduceStockAndLinkItems(Order order, List<OrderItem> items) {
+        for (OrderItem item : items) {
+            Product product = productRepository.findById(item.getProduct().getId()).get();
+
+            // Reduce stock
+            product.setStock(product.getStock() - item.getQuantity());
+            productRepository.save(product);
+
+            // Link order and product
+            item.setOrder(order);
+            item.setProduct(product);
+        }
+    }
+
+    // ---------------- Get Orders ----------------
     public List<Order> getOrdersByUser(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
         return orderRepository.findByUser(user);
     }
-
 
     public List<Order> getAllOrders() {
         return orderRepository.findAll();
     }
 
-    
+    // ---------------- Delete Order ----------------
     @Transactional
     public void deleteOrder(Long orderId) {
 
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("Order not found"));
 
-        for (OrderItem item : order.getItems()) {
-            Product product = item.getProduct();
-            product.setStock(product.getStock() + item.getQuantity());
-            productRepository.save(product);
+        // Null-safe iteration
+        if (order.getItems() != null) {
+            for (OrderItem item : order.getItems()) {
+                Product product = item.getProduct();
+                if (product != null) {
+                    product.setStock(product.getStock() + item.getQuantity());
+                    productRepository.save(product);
+                }
+            }
         }
 
         orderRepository.delete(order);

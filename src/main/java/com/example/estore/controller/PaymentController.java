@@ -11,34 +11,25 @@ import org.springframework.web.bind.annotation.*;
 import com.razorpay.Order;
 import com.razorpay.RazorpayClient;
 
-import jakarta.annotation.PostConstruct;
-
 @RestController
 @RequestMapping("/api/payment")
 public class PaymentController {
 
-    private RazorpayClient razorpayClient;
+    private final RazorpayClient razorpayClient;
 
-    @Value("${razorpay.key_id}")
-    private String keyId;
+    public PaymentController(
+            @Value("${razorpay.key_id}") String keyId,
+            @Value("${razorpay.key_secret}") String keySecret) throws Exception {
 
-    @Value("${razorpay.key_secret}")
-    private String keySecret;
-
-    @PostConstruct
-    public void init() throws Exception {
-        if (keyId == null || keySecret == null) {
+        if (keyId == null || keySecret == null || keyId.isEmpty() || keySecret.isEmpty()) {
             throw new IllegalStateException("Razorpay credentials are not set");
         }
+
         this.razorpayClient = new RazorpayClient(keyId, keySecret);
     }
 
     @PostMapping("/create-order")
     public ResponseEntity<?> createOrder(@RequestBody Map<String, Object> data) {
-        if (razorpayClient == null) {
-            return ResponseEntity.status(500).body("Payment gateway not initialized");
-        }
-
         try {
             if (!data.containsKey("amount")) {
                 return ResponseEntity.badRequest().body("Amount is required");
@@ -56,7 +47,7 @@ public class PaymentController {
             }
 
             JSONObject options = new JSONObject();
-            options.put("amount", amount * 100);
+            options.put("amount", amount * 100); // amount in paise
             options.put("currency", "INR");
 
             Order order = razorpayClient.orders.create(options);

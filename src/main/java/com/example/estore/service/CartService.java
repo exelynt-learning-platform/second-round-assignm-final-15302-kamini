@@ -25,7 +25,32 @@ public class CartService {
     @Autowired
     private UserRepository userRepository;
 
+    // ---------------- Add to Cart ----------------
     public CartItem addToCart(CartItem item) {
+        validateCartItemInput(item);
+
+        User user = userRepository.findById(item.getUser().getId())
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        Product product = productRepository.findById(item.getProduct().getId())
+                .orElseThrow(() -> new IllegalArgumentException("Product not found"));
+
+        Optional<CartItem> existingItemOpt = cartRepository.findByUserIdAndProductId(user.getId(), product.getId());
+
+        if (existingItemOpt.isPresent()) {
+            return updateExistingItem(existingItemOpt.get(), item.getQuantity(), product);
+        }
+
+        // New item
+        if (product.getStock() < item.getQuantity()) {
+            throw new IllegalArgumentException("Insufficient stock available");
+        }
+
+        item.setUser(user);
+        item.setProduct(product);
+        return cartRepository.save(item);
+    }
+
+    private void validateCartItemInput(CartItem item) {
         if (item.getUser() == null || item.getUser().getId() == null)
             throw new IllegalArgumentException("User is required");
 
@@ -34,45 +59,29 @@ public class CartService {
 
         if (item.getQuantity() <= 0)
             throw new IllegalArgumentException("Quantity must be greater than 0");
-
-        User user = userRepository.findById(item.getUser().getId())
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-        Product product = productRepository.findById(item.getProduct().getId())
-                .orElseThrow(() -> new IllegalArgumentException("Product not found"));
-
-        if (product.getStock() < item.getQuantity())
-            throw new IllegalArgumentException("Insufficient stock available");
-
-        Optional<CartItem> existingItemOpt = cartRepository.findByUserIdAndProductId(user.getId(), product.getId());
-
-        if (existingItemOpt.isPresent()) {
-            CartItem existingItem = existingItemOpt.get();
-            int newQuantity = existingItem.getQuantity() + item.getQuantity();
-            if (product.getStock() < newQuantity)
-                throw new IllegalArgumentException("Exceeds available stock");
-
-            existingItem.setQuantity(newQuantity);
-            return cartRepository.save(existingItem);
-        }
-
-        item.setUser(user);
-        item.setProduct(product);
-        return cartRepository.save(item);
     }
 
- 
+    private CartItem updateExistingItem(CartItem existingItem, int additionalQuantity, Product product) {
+        int newQuantity = existingItem.getQuantity() + additionalQuantity;
+        if (product.getStock() < newQuantity) {
+            throw new IllegalArgumentException("Exceeds available stock");
+        }
+        existingItem.setQuantity(newQuantity);
+        return cartRepository.save(existingItem);
+    }
+
+    // ---------------- Get Cart ----------------
     public List<CartItem> getCart(Long userId) {
         return cartRepository.findByUserId(userId);
     }
 
-   
+    // ---------------- Clear Cart ----------------
     public void clearCart(Long userId) {
         cartRepository.deleteByUserId(userId);
     }
 
-  
+    // ---------------- Update Quantity ----------------
     public CartItem updateQuantity(Long itemId, int quantity) {
-
         if (quantity <= 0) {
             throw new IllegalArgumentException("Quantity must be greater than 0");
         }
@@ -81,7 +90,6 @@ public class CartService {
                 .orElseThrow(() -> new IllegalArgumentException("Item not found"));
 
         Product product = item.getProduct();
-
         if (product.getStock() < quantity) {
             throw new IllegalArgumentException("Insufficient stock available");
         }
@@ -90,7 +98,7 @@ public class CartService {
         return cartRepository.save(item);
     }
 
-    
+    // ---------------- Remove Item ----------------
     public void removeItem(Long itemId) {
         if (!cartRepository.existsById(itemId)) {
             throw new IllegalArgumentException("Item not found");
@@ -98,7 +106,7 @@ public class CartService {
         cartRepository.deleteById(itemId);
     }
 
-  
+    // ---------------- Cart Count ----------------
     public int getCartCountByUserId(Long userId) {
         return cartRepository.countByUserId(userId);
     }

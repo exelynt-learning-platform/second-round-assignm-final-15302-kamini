@@ -13,7 +13,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import com.example.estore.util.JwtAuthFilter;
 
 @Configuration
-@EnableMethodSecurity  
+@EnableMethodSecurity
 public class SecurityConfig {
 
     @Autowired
@@ -23,40 +23,35 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
         http
-            
-            .csrf(csrf -> csrf.disable())
 
-            .sessionManagement(session ->
-                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-            )
+                .csrf(csrf -> csrf.disable())
 
-            .authorizeHttpRequests(auth -> auth
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-                .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/api/products/**").permitAll()
+                .authorizeHttpRequests(auth -> auth
 
-                .requestMatchers("/api/admin/**").hasAuthority("ADMIN")
+                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/products/**").permitAll()
 
-                .requestMatchers("/api/cart/**").hasAnyAuthority("USER", "ADMIN")
-                .requestMatchers("/api/orders/**").hasAnyAuthority("USER", "ADMIN")
-                .requestMatchers("/api/payment/**").hasAnyAuthority("USER", "ADMIN")
+                        .requestMatchers("/api/admin/**").hasAuthority("ADMIN")
 
-                .anyRequest().authenticated()
-            )
+                        .requestMatchers("/api/cart/**").hasAnyAuthority("USER", "ADMIN")
+                        .requestMatchers("/api/orders/**").hasAnyAuthority("USER", "ADMIN")
+                        .requestMatchers("/api/payment/**").hasAnyAuthority("USER", "ADMIN")
 
-            .exceptionHandling(ex -> ex
-                .authenticationEntryPoint((req, res, e) -> {
-                    res.setStatus(401);
-                    res.getWriter().write("Unauthorized");
-                })
-            )
+                        .anyRequest().authenticated())
 
-            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((req, res, e) -> {
+                            res.setStatus(401);
+                            res.getWriter().write("Unauthorized");
+                        }))
+
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-   
     @Bean
     public BCryptPasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
